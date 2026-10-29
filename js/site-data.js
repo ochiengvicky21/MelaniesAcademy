@@ -414,23 +414,31 @@
 
   async function submitSubmission(formType, values, captchaToken) {
     const db = requireConfigured();
-    const kind = formType === "admission" ? "admission"
-      : formType === "visit" ? "visit"
-        : formType === "newsletter" ? "newsletter" : "contact";
+    const kinds = {
+      admission: "admission",
+      visit: "visit",
+      newsletter: "newsletter",
+      contact: "contact"
+    };
+    const kind = kinds[formType];
+    if (!kind) throw new Error("Choose a valid enquiry type.");
+    if (!captchaToken || captchaToken.length > 2048) {
+      throw new Error("Complete the security check before sending your enquiry.");
+    }
     const request = await invokeFunction(db, "submit-public-message", {
-        kind,
-        name: values.parentName || values.name || "",
-        email: values.email || "",
-        phone: values.phone || "",
-        studentName: values.studentName || "",
-        grade: values.grade || "",
-        department: values.department || "",
-        subject: values.subject || "",
-        message: values.message || values.additionalInfo || "",
-        preferredVisitDate: values.visitDate || "",
-        website: values.website || "",
-        captchaToken
-      });
+      kind,
+      name: values.parentName || values.name || "",
+      email: values.email || "",
+      phone: values.phone || "",
+      studentName: values.studentName || "",
+      grade: values.grade || "",
+      department: values.department || "",
+      subject: values.subject || "",
+      message: values.message || values.additionalInfo || "",
+      preferredVisitDate: values.visitDate || "",
+      website: values.website || "",
+      captchaToken
+    });
     if (!request?.success) throw new Error("The message could not be submitted. Please try again or contact the school directly.");
     return true;
   }

@@ -20,6 +20,25 @@
     status.classList.toggle("form-error", Boolean(isError));
   }
 
+  function canSubmitForm(form) {
+    return Boolean(store.turnstileSiteKey)
+      && (form.dataset.submissionForm !== "admission" || store.get().settings.admissionsOpen);
+  }
+
+  function setFormUnavailable(form, message) {
+    setFormStatus(form, message, true);
+    const status = form.querySelector("[data-form-status]");
+    const contactLink = document.querySelector(".whatsapp-float");
+    if (status && contactLink) {
+      const link = document.createElement("a");
+      link.href = contactLink.href;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      link.textContent = " Contact the school on WhatsApp instead.";
+      status.append(link);
+    }
+  }
+
   function render(data) {
     const settings = data.settings;
     document.title = document.title.replace(/Your School Name|The Little Harvad(?: Academy)?/gi, settings.schoolName);
@@ -52,8 +71,11 @@
     document.querySelectorAll("[data-admissions-status]").forEach(element => {
       element.textContent = settings.admissionsOpen ? "Admissions are open" : "Contact us about future places";
     });
-    document.querySelectorAll('[data-submission-form="admission"] button[type="submit"]').forEach(button => {
-      button.disabled = !settings.admissionsOpen || !store.turnstileSiteKey;
+    document.querySelectorAll("[data-submission-form]").forEach(form => {
+      const button = form.querySelector('[type="submit"]');
+      const hasCaptcha = Boolean(form.querySelector('[name="cf-turnstile-response"]')?.value);
+      button.disabled = !store.turnstileSiteKey || !hasCaptcha
+        || (form.dataset.submissionForm === "admission" && !settings.admissionsOpen);
     });
     document.querySelectorAll('[data-submission-form="admission"] input, [data-submission-form="admission"] select, [data-submission-form="admission"] textarea').forEach(field => {
       field.disabled = !settings.admissionsOpen;
@@ -227,12 +249,13 @@
     if (!siteKey) {
       forms.forEach(form => {
         form.querySelector('[type="submit"]').disabled = true;
-        setFormStatus(form, "Online forms are not active yet. Please contact the school directly.", true);
+        setFormUnavailable(form, "Online forms are not active yet. Please contact the school directly.");
       });
       return;
     }
 
     forms.forEach(form => {
+      form.querySelector('[type="submit"]').disabled = true;
       let widgetId;
       const widget = form.querySelector("[data-turnstile]");
       if (!widget) return;
@@ -241,16 +264,16 @@
         widgetId = window.turnstile.render(widget, {
           sitekey: siteKey,
           callback: () => {
-            form.querySelector('[type="submit"]').disabled = false;
+            form.querySelector('[type="submit"]').disabled = !canSubmitForm(form);
             setFormStatus(form, "", false);
           },
           "expired-callback": () => {
             form.querySelector('[type="submit"]').disabled = true;
-            setFormStatus(form, "Please complete the security check again.", true);
+            setFormUnavailable(form, "Please complete the security check again.");
           },
           "error-callback": () => {
             form.querySelector('[type="submit"]').disabled = true;
-            setFormStatus(form, "The security check could not load. Refresh and try again.", true);
+            setFormUnavailable(form, "The security check could not load. Refresh and try again.");
           }
         });
         form.querySelector('[type="submit"]').disabled = true;
@@ -270,7 +293,10 @@
       script.defer = true;
       script.dataset.turnstileScript = "true";
       script.onload = () => window.dispatchEvent(new Event("turnstile-ready"));
-      script.onerror = () => forms.forEach(form => setFormStatus(form, "The security check could not load. Refresh and try again.", true));
+      script.onerror = () => forms.forEach(form => {
+        form.querySelector('[type="submit"]').disabled = true;
+        setFormUnavailable(form, "The security check could not load. Refresh and try again.");
+      });
       document.head.appendChild(script);
     }
   }
@@ -285,11 +311,11 @@
         const values = Object.fromEntries(new FormData(form).entries());
         const captchaToken = form.querySelector('[name="cf-turnstile-response"]')?.value || "";
         if (!store.turnstileSiteKey) {
-          setFormStatus(form, "Online forms are not active yet. Please contact the school directly.", true);
+          setFormUnavailable(form, "Online forms are not active: the school must configure its protected form service.");
           return;
         }
         if (!captchaToken) {
-          setFormStatus(form, "Please complete the security check before sending.", true);
+          setFormUnavailable(form, "Please complete the security check before sending.");
           return;
         }
         submit.disabled = true;
@@ -299,14 +325,14 @@
           form.reset();
           if (window.turnstile) {
             const widget = form.querySelector("[data-turnstile]");
-            if (widget) window.turnstile.reset(widget.dataset.widgetId);
+            if (widget?.dataset.widgetId !== undefined) window.turnstile.reset(widget.dataset.widgetId);
           }
           setFormStatus(form, "Thank you. Your message has been securely sent to the school office.", false);
         } catch (error) {
           console.error("Could not send public enquiry.", error);
-          setFormStatus(form, error.message || "Your message could not be sent. Please try again or contact the school directly.", true);
-        } finally {
-          submit.disabled = false;
+          setFormUnavailable(form, error.message || "Your message could not be sent. Please try again or contact the school directly.");
+          const widget = form.querySelector("[data-turnstile]");
+          if (window.turnstile && widget?.dataset.widgetId !== undefined) window.turnstile.reset(widget.dataset.widgetId);
         }
       });
     });
@@ -336,7 +362,7 @@
   if (store.isConfigured()) loadTurnstile();
   else document.querySelectorAll("[data-submission-form]").forEach(form => {
     form.querySelector('[type="submit"]').disabled = true;
-    setFormStatus(form, "Online forms are not active yet. Please contact the school directly.", true);
+    setFormUnavailable(form, "Online forms are not active because the protected Supabase form service is not configured.");
   });
   setupWhatsApp(store.get().settings);
   refresh();

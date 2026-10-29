@@ -9,35 +9,68 @@ const publicPages = [
   ["about.html", "Our School"],
   ["academics.html", "Learning"],
   ["admissions.html", "Admissions"],
-  ["student-life.html", "Student Life"],
-  ["facilities.html", "Facilities"],
-  ["gallery.html", "Gallery"],
-  ["downloads.html", "Downloads"],
-  ["faq.html", "FAQs"],
-  ["staff.html", "Staff"],
+  ["student-life.html", "School Life"],
   ["news.html", "News & Events"],
   ["contact.html", "Contact"]
+];
+const additionalPages = [
+  ["downloads.html", "Downloads"],
+  ["gallery.html", "Gallery"],
+  ["staff.html", "Staff"],
+  ["facilities.html", "Facilities"],
+  ["faq.html", "FAQs"]
 ];
 
 if (navLinks) {
   const currentPage = location.pathname.split("/").pop() || "index.html";
   navLinks.id ||= "site-primary-navigation";
   navLinks.setAttribute("aria-label", "Main navigation");
+  navLinks.replaceChildren();
 
   publicPages.forEach(([href, label]) => {
-    let link = [...navLinks.querySelectorAll("a")].find(item => item.getAttribute("href") === href);
-    if (!link) {
-      const item = document.createElement("li");
-      link = document.createElement("a");
-      link.href = href;
-      item.append(link);
-      navLinks.append(item);
-    }
-
+    const item = document.createElement("li");
+    const link = document.createElement("a");
+    link.href = href;
     link.textContent = label;
     link.classList.toggle("active", href === currentPage);
     if (href === currentPage) link.setAttribute("aria-current", "page");
-    else link.removeAttribute("aria-current");
+    item.append(link);
+    navLinks.append(item);
+  });
+
+  const moreItem = document.createElement("li");
+  moreItem.className = "nav-more";
+  const moreButton = document.createElement("button");
+  moreButton.type = "button";
+  moreButton.className = "nav-more-toggle";
+  moreButton.textContent = "More";
+  moreButton.setAttribute("aria-expanded", "false");
+  moreButton.setAttribute("aria-controls", "site-nav-more");
+  const submenu = document.createElement("ul");
+  submenu.className = "nav-submenu";
+  submenu.id = "site-nav-more";
+  submenu.hidden = true;
+  additionalPages.forEach(([href, label]) => {
+    const item = document.createElement("li");
+    const link = document.createElement("a");
+    link.href = href;
+    link.textContent = label;
+    link.classList.toggle("active", href === currentPage);
+    if (href === currentPage) {
+      link.setAttribute("aria-current", "page");
+      moreButton.classList.add("active");
+    }
+    item.append(link);
+    submenu.append(item);
+  });
+  moreItem.append(moreButton, submenu);
+  navLinks.append(moreItem);
+
+  moreButton.addEventListener("click", () => {
+    const expanded = moreButton.getAttribute("aria-expanded") !== "true";
+    moreButton.setAttribute("aria-expanded", String(expanded));
+    moreItem.classList.toggle("open", expanded);
+    submenu.hidden = !expanded;
   });
 }
 
@@ -76,7 +109,17 @@ if (menuBtn && navLinks) {
   });
 
   document.addEventListener("keydown", event => {
-    if (event.key === "Escape" && navLinks.classList.contains("show")) closeMenu(true);
+    if (event.key === "Escape") {
+      if (navLinks.classList.contains("show")) closeMenu(true);
+      const moreItem = navLinks.querySelector(".nav-more.open");
+      const moreButton = moreItem?.querySelector(".nav-more-toggle");
+      if (moreItem && moreButton) {
+        moreItem.classList.remove("open");
+        moreButton.setAttribute("aria-expanded", "false");
+        moreItem.querySelector(".nav-submenu").hidden = true;
+        moreButton.focus();
+      }
+    }
   });
 
   document.addEventListener("click", event => {
@@ -133,7 +176,7 @@ links.forEach(link => {
 // =========================================
 
 const revealItems = document.querySelectorAll(
-  ".card, .about-grid div, .principal-grid, .news-grid article, .learning-card, .school-update, .event-card, .staff-card, .gallery-item, .faq-item, .download-card"
+  ".card, .about-grid div, .principal-grid, .news-grid article, .learning-card, .school-update, .event-card, .staff-card, .gallery-item, .faq-item, .download-card, .school-values article"
 );
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
@@ -147,7 +190,8 @@ if (!reducedMotion && "IntersectionObserver" in window) {
     });
   }, { threshold: 0.12 });
 
-  revealItems.forEach(item => {
+  revealItems.forEach((item, index) => {
+    item.style.setProperty("--reveal-order", String(index % 5));
     item.classList.add("reveal-on-scroll");
     revealObserver.observe(item);
   });
@@ -179,7 +223,8 @@ window.addEventListener("scroll", () => {
       
       const text = counter.innerText;
       
-      const number = parseInt(text.replace(/\D/g, ""));
+      const number = Number.parseInt(text.replace(/\D/g, ""), 10);
+      if (!Number.isFinite(number)) return;
       
       const suffix = text.replace(/[0-9]/g, "");
       
@@ -218,30 +263,27 @@ window.addEventListener("scroll", () => {
 // =========================================
 
 const topButton = document.createElement("button");
+topButton.type = "button";
 topButton.textContent = "↑";
 topButton.className = "backToTop";
-topButton.type = "button";
 topButton.setAttribute("aria-label", "Back to top");
+
 document.body.appendChild(topButton);
 
 window.addEventListener("scroll", () => {
-  
+
   if (window.scrollY > 400) {
-    
     topButton.classList.add("show");
-    
   } else {
-    
     topButton.classList.remove("show");
-    
   }
-  
 });
 
 topButton.addEventListener("click", () => {
-  
-  window.scrollTo({ top: 0, behavior: reducedMotion ? "auto" : "smooth" });
-  
+  window.scrollTo({
+    top: 0,
+    behavior: reducedMotion ? "auto" : "smooth"
+  });
 });
 
 // =========================================

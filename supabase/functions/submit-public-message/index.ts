@@ -13,14 +13,20 @@ function jsonResponse(status: number, body: Record<string, unknown>) {
   });
 }
 
+class PublicFormError extends Error {
+  constructor(message: string, readonly status: number) {
+    super(message);
+  }
+}
+
 function text(value: unknown, maximum: number, required = false): string | null {
   if (typeof value !== "string") {
-    if (required) throw new Error("Please complete all required fields.");
+    if (required) throw new PublicFormError("Please complete all required fields.", 400);
     return null;
   }
   const result = value.trim();
-  if (required && !result) throw new Error("Please complete all required fields.");
-  if (result.length > maximum) throw new Error("One or more fields are too long.");
+  if (required && !result) throw new PublicFormError("Please complete all required fields.", 400);
+  if (result.length > maximum) throw new PublicFormError("One or more fields are too long.", 400);
   return result || null;
 }
 
@@ -40,8 +46,8 @@ function escapeHtml(value: string) {
 
 async function verifyTurnstile(token: string, remoteIp: string | null) {
   const secret = Deno.env.get("TURNSTILE_SECRET_KEY");
-  if (!secret) throw new Error("Secure enquiry forms are not configured. Please contact the school directly.");
-  if (!token || token.length > 2048) throw new Error("Complete the security check and try again.");
+  if (!secret) throw new PublicFormError("Secure enquiry forms are not configured. Please contact the school directly.", 503);
+  if (!token || token.length > 2048) throw new PublicFormError("Complete the security check and try again.", 400);
   const response = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -51,11 +57,11 @@ async function verifyTurnstile(token: string, remoteIp: string | null) {
       ...(remoteIp ? { remoteip: remoteIp } : {}),
     }),
   });
-  if (!response.ok) throw new Error("The security check is temporarily unavailable.");
+  if (!response.ok) throw new PublicFormError("The security check is temporarily unavailable.", 503);
   const verification = await response.json();
   const expectedHostname = Deno.env.get("TURNSTILE_HOSTNAME");
   if (!verification.success || (expectedHostname && verification.hostname !== expectedHostname)) {
-    throw new Error("The security check expired or could not be verified. Please try again.");
+    throw new PublicFormError("The security check expired or could not be verified. Please try again.", 400);
   }
 }
 
@@ -122,6 +128,21 @@ Deno.serve(async (request) => {
     const db = createClient(supabaseUrl, serviceRoleKey, {
       auth: { autoRefreshToken: false, persistSession: false },
     });
+    if (kind === "admission") {
+      const { data: settings, error: settingsError } = await db
+        .from("site_settings")
+        .select("admissions_open")
+        .eq("id", 1)
+        .maybeSingle();
+      if (settingsError) {
+        console.error("Could not verify whether admissions are open.", settingsError.message);
+        return jsonResponse(500, { error: "The school could not verify the admissions status." });
+      }
+      if (!settings?.admissions_open) {
+        return jsonResponse(403, { error: "Online admissions are currently closed. Please contact the school office." });
+      }
+    }
+
     const { error } = await db.from("public_submissions").insert({
       kind,
       name,
@@ -182,7 +203,10 @@ Deno.serve(async (request) => {
 
     return jsonResponse(200, { success: true });
   } catch (error) {
+    if (error instanceof PublicFormError) return jsonResponse(error.status, { error: error.message });
+    if (error instanceof SyntaxError) return jsonResponse(400, { error: "The enquiry form data is invalid." });
     const message = error instanceof Error ? error.message : "The enquiry could not be submitted.";
-    return jsonResponse(400, { error: message });
+    console.error("Could not process public school enquiry.", message);
+    return jsonResponse(500, { error: "The enquiry could not be submitted. Please try again." });
   }
 });
